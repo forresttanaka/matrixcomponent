@@ -4,12 +4,18 @@ import './App.css';
 import matrixJson from './testMatrixJson';
 
 
-const testFunc = (col, row, value, meta) => <span><i>{col}</i>:<strong>{row}</strong>:<span style={{ backgroundColor: '#00FF00' }}>{value}</span></span>;
-
+const contentFunc = (col, row, value, meta) => (
+    <span><i>{col}</i>:<strong>{row}</strong>:<span style={{ backgroundColor: meta ? meta.color : '#00FF00' }}>{value + (meta ? meta.adder : 0)}</span></span>
+);
 
 // Matrix data
 // rows (required array)
-//     One entry per row, always an array
+//     Each element can be:
+//         - an array of values, React components, and functions comprising the row
+//         - an object including these properties:
+//             - data: same as the previously described array (required array)
+//             - css: CSS class to apply to every <tr> element in the table except where overridden
+// tableCss: CSS class to apply to the <table> element
 //
 // Cell object options:
 //    Need one and only one of:
@@ -25,85 +31,104 @@ const testFunc = (col, row, value, meta) => <span><i>{col}</i>:<strong>{row}</st
 //        header: Same as `content`, but generates a <th> instead of a <td>
 //    value: If content/header is a function, this value gets passed to it
 //    colMergeSpan: Number of columns cell should span
+//    css: CSS classes to assign to the <td> of this cell
 const matrixData = {
     rows: [
-        [1, 2, 3, 4, { content: <span style={{ fontWeight: 'bold' }}>5</span> }, 6],
-        [7, 8, { content: 'Special case', colMergeSpan: 3 }, { content: testFunc, value: 8 }],
-        [13, { content: () => <i>5</i> }, 15, { content: testFunc, value: 16 }, 17, 18],
+        [1, 2, { content: 3, style: { fontWeight: 100 } }, 4, { content: <span style={{ fontWeight: 'bold' }}>5</span> }, 6],
+        [{ content: 7, css: 'cell-override' }, 8, { content: 'Special case', colSpan: 3 }, { content: contentFunc, value: 8 }],
+        { rowContent: [13, { content: () => <i>5</i> }, null, { content: contentFunc, value: 16 }, 17, 18], css: 'row-class' },
+        [19, 20, { content: contentFunc, value: 20, meta: { adder: 1, color: '#FFFF00' }}, 22, 23, 24],
+        [{ content: 'Full Width', colSpan: 0, style: { textAlign: 'center', backgroundColor: '#c0c0ff' } }],
     ],
-    headerTop: [
-        'Vertical header 1',
-        {
-            content: 'Vertical header 2',
-            colMergeSpan: 3,
-        },
-        'Vertical header 5',
-    ],
+    rowCss: 'overall-row',
+    tableCss: 'overall-table',
 };
 
 
-class MossMatrix extends React.Component {
-    render() {
-        const { data } = this.props;
-        let row;
-        let col;
-        let content;
+ /**
+  * Determine the maximum width of all rows in `DataTable` data.
+  * @param {object} tableData Same table data you pass to `DataTable`.
+  */
+ const tableDataMaxWidth = (tableData) => {
+    const widths = tableData.rows.map(row => (Array.isArray(row) ? row.length : row.rowContent.length));
+    return Math.max(...widths);
+};
 
-        return (
-            <table>
-                <tbody>
-                    {data.rows.map((cells, rowIndex) => {
-                        row = rowIndex === 0 ? 0 : row + 1;
-                        return (
-                            <tr key={row}>
-                                {cells.map((cell, colIndex) => {
-                                    const cellType = typeof cell;
 
-                                    // Check for cell objects specifying a column span.
-                                    const colMergeSpan = cellType === 'object' && cell.colMergeSpan ? cell.colMergeSpan : 1;
-                                    col = colIndex === 0 ? 0 : col + colMergeSpan;
-                                    const cellValue = cell.content || cell.header;
+const DataTable = ({ tableData }) => {
+    let colNumber;
+    let cellContent;
+    let maxWidth;
 
-                                    if (cellType === 'object') {
-                                        if (typeof cellValue === 'function') {
-                                            content = cellValue(col, row, cell.value, cell.meta);
-                                        } else {
-                                            content = cellValue;
-                                        }
+    return (
+        <table className={tableData.tableCss || null}>
+            <tbody>
+                {tableData.rows.map((row, rowNumber) => {
+                    // Get array of values representing a row or the `rowContent` array if the row
+                    // is an object.
+                    const cells = Array.isArray(row) ? row : row.rowContent;
+                    colNumber = 0;
+                    return (
+                        <tr key={rowNumber} className={row.css || tableData.rowCss || null} style={row.style || null}>
+                            {cells.map((cell, colIndex) => {
+                                // Extract the cell's content from itself, its object, or its
+                                // function. JS says `typeof null` is 'object'.
+                                const cellType = typeof cell;
+                                const cellValue = (cell !== null) && (cell.content || cell.header);
+                                if (cellType === 'object' && cell !== null) {
+                                    if (typeof cellValue === 'function') {
+                                        // Need to call a function to get the cell's content.
+                                        cellContent = cellValue(colNumber, rowNumber, cell.value, cell.meta);
                                     } else {
-                                        content = cell;
+                                        // The cell content is right in the `content` or `header`.
+                                        cellContent = cellValue;
                                     }
+                                } else {
+                                    // The array element itself is the value.
+                                    cellContent = cell;
+                                }
+                                colNumber += 1;
 
-                                    // Render the cell, which could have a column span.
-                                    if (colMergeSpan > 1) {
-                                        if (cell.header) {
-                                            return <th key={colIndex} colSpan={colMergeSpan}>{content}</th>;
-                                        }
-                                        return <td key={colIndex} colSpan={colMergeSpan}>{content}</td>;
+                                // Cell's colSpan can be a specific number, 0 (full width), or
+                                // undefined (1).
+                                let cellColSpan = cell && cell.colSpan;
+                                if (cellColSpan === 0) {
+                                    // Request for colSpan to be whatever the maximum width of the
+                                    // table. Use or get cached value.
+                                    if (maxWidth === undefined) {
+                                        maxWidth = tableDataMaxWidth(tableData);
                                     }
-                                    if (cell.header) {
-                                        return <th key={colIndex}>{content}</th>;
-                                    }
-                                    return <td key={colIndex}>{content}</td>;
-                                })}
-                            </tr>
-                        );
-                    })}
-                </tbody>
-            </table>
-        );
-    }
-}
+                                    cellColSpan = maxWidth;
+                                } else if (cellColSpan === undefined) {
+                                    // No colSpan defined for this cell, so it's 1.
+                                    cellColSpan = 1;
+                                }
 
-MossMatrix.propTypes = {
-    /** Whole matrix data */
-    data: PropTypes.object.isRequired,
-    /** Extra data */
-    meta: PropTypes.object,
+                                // Render the cell, which could have a column span.
+                                const cellCss = (cell && cell.css) || null;
+                                const cellStyle = (cell && cell.style) || null;
+                                if (cellColSpan > 1) {
+                                    if (cell && cell.header) {
+                                        return <th key={colIndex} colSpan={cellColSpan} className={cellCss} style={cellStyle}>{cellContent}</th>;
+                                    }
+                                    return <td key={colIndex} colSpan={cellColSpan} className={cellCss} style={cellStyle}>{cellContent}</td>;
+                                }
+                                if (cell && cell.header) {
+                                    return <th key={colIndex} className={cellCss} style={cellStyle}>{cellContent}</th>;
+                                }
+                                return <td key={colIndex} className={cellCss} style={cellStyle}>{cellContent}</td>;
+                            })}
+                        </tr>
+                    );
+                })}
+            </tbody>
+        </table>
+    );
 };
 
-MossMatrix.defaultProps = {
-    meta: null,
+DataTable.propTypes = {
+    /** Whole table data */
+    tableData: PropTypes.object.isRequired,
 };
 
 
@@ -132,16 +157,7 @@ class App extends Component {
         realMatrixConfig.rows = realMatrixData;
         return (
             <div className="App">
-                {/* <header className="App-header">
-                    Matrix test
-                </header> */}
-                {/* <MossMatrix data={matrixData} /> */}
-                <div>
-                    <header className="App-header">
-                        Matrix data test
-                    </header>
-                    <MossMatrix data={realMatrixConfig} />
-                </div>
+                <DataTable tableData={matrixData} />
             </div>
         );
     }
