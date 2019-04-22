@@ -40,6 +40,13 @@ const matrixData = {
         [19, 20, { content: contentFunc, value: 20, meta: { adder: 1, color: '#FFFF00' }}, 22, 23, 24],
         [{ content: 'Full Width', colSpan: 0, style: { textAlign: 'center', backgroundColor: '#c0c0ff' } }],
     ],
+    rowKeys: [
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+    ],
     rowCss: 'overall-row',
     tableCss: 'overall-table',
 };
@@ -67,9 +74,10 @@ const DataTable = ({ tableData }) => {
                     // Get array of values representing a row or the `rowContent` array if the row
                     // is an object.
                     const cells = Array.isArray(row) ? row : row.rowContent;
+                    const rowKey = tableData.rowKeys ? tableData.rowKeys[rowNumber] : rowNumber;
                     colNumber = 0;
                     return (
-                        <tr key={rowNumber} className={row.css || tableData.rowCss || null} style={row.style || null}>
+                        <tr key={rowKey} className={row.css || tableData.rowCss || null} style={row.style || null}>
                             {cells.map((cell, colIndex) => {
                                 // Extract the cell's content from itself, its object, or its
                                 // function. JS says `typeof null` is 'object'.
